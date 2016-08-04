@@ -9,12 +9,12 @@ from sqlalchemy import distinct
 
 ##### Import Setup
 ImportBase = declarative_base()
-import_engine = create_engine('postgresql://djangodb:@Django!@192.168.1.25:5432/fishtagging_import')
+import_engine = create_engine('postgresql://djangodb:@Django!@192.168.1.160:5432/fishtagging_import')
 import_metadata = MetaData(bind=import_engine)
 
 #### Export Setup
 Export_Base = declarative_base()
-export_engine = create_engine('postgresql://djangodb:@Django!@192.168.1.25:5432/djangomap')
+export_engine = create_engine('postgresql://djangodb:@Django!@192.168.1.160:5432/djangomap')
 export_metadata = MetaData(bind=export_engine)
 
 
@@ -183,105 +183,203 @@ def transfer_taggers():
     list = import_session.query(tblTaggersMaster).all()
 
     for item in list:
-        print item.TaggersMasterID, item.__dict__.get('First Name'), item.__dict__.get('Last Name')
+        #print item.TaggersMasterID, item.__dict__.get('First Name'), item.__dict__.get('Last Name')
 
-        stateId = export_session.query(fishtagging_states).filter(fishtagging_states.st == item.St).first() # Turn the State val into the reference PK
-        if stateId is not None:
-            stateId = stateId.id
-        print str(stateId)
+        add_user(
+            taggersMasterID=item.TaggersMasterID,
+            first=check_string(item.__dict__.get('First Name')),
+            last=item.__dict__.get('Last Name'),
+            suffix=check_string(item.Suffix),
+            prefix=check_string(item.Prefix),
+            nick=check_string(item.First),
+            address1=check_string(item.__dict__.get('Address Line 1')),
+            address=check_string(item.Address),
+            muni=check_string(item.Munic),
+            zip= check_string(item.Zip),
+            email= check_string(item.email),
+            phone= check_string(item.Phone),
+            cell= check_string(item.Cell),
+            business= check_string(item.Business),
+            member=item.Member == 1, # Casting from the Access Y/N
+            duesDueDate=item.Dues,
+            dateJoined=item.__dict__.get('Date Joined'),
+            clubName=check_string(item.ClubName),
+            clubMember=item.__dict__.get('Club Member') == 1,
+            starting=item.Starting,
+            updating=item.Updating,
+            total=item.Total,
+            stateName=item.St) # State Name
 
-        newEntry = fishtagging_taggers(taggersMasterID=item.TaggersMasterID,
-                                       first=check_string(item.__dict__.get('First Name')),
-                                       last=item.__dict__.get('Last Name'),
-                                       suffix=check_string(item.Suffix),
-                                       prefix=check_string(item.Prefix),
-                                       nick=check_string(item.First),
-                                       address1=check_string(item.__dict__.get('Address Line 1')),
-                                       address=check_string(item.Address),
-                                       muni=check_string(item.Munic),
-                                       zip= check_string(item.Zip),
-                                       email= check_string(item.email),
-                                       phone= check_string(item.Phone),
-                                       cell= check_string(item.Cell),
-                                       business= check_string(item.Business),
-                                       member=item.Member == 1, # Casting from the Access Y/N
-                                       duesDueDate=item.Dues,
-                                       dateJoined=item.__dict__.get('Date Joined'),
-                                       clubName=check_string(item.ClubName),
-                                       clubMember=item.__dict__.get('Club Member') == 1,
-                                       starting=item.Starting,
-                                       updating=item.Updating,
-                                       total=item.Total,
-                                       st_id=stateId)
-        export_session.add(newEntry)
-        export_session.flush()
     # TODO: Also scan through and add Recapture users that are missing from TaggersMaster; there are only 6.
     # TODO: Make this de-duplicate. There are 7 users in here twice. See: Larry Gonnello
 
-def add_user(first,last,address1,address,muni,zip,email,phone,cell,business,member,duesDueDate,dateJoined,clubName,clubMember,starting,updating,total,stateId,taggersMasterId=None,suffix=None,prefix=None,nick=None):
-    newEntry = fishtagging_taggers(taggersMasterID=taggersMasterId,
-                               first=check_string(first),
-                               last=check_string(last),
-                               suffix=check_string(suffix),
-                               prefix=check_string(prefix),
-                               nick=check_string(nick),
-                               address1=check_string(address1),
-                               address=check_string(address),
-                               muni=check_string(muni),
-                               zip= check_string(zip),
-                               email= check_string(email),
-                               phone= check_string(phone),
-                               cell= check_string(cell),
-                               business= check_string(business),
-                               member=member, # Casting from the Access Y/N
-                               duesDueDate=duesDueDate,
-                               dateJoined=dateJoined,
-                               clubName=check_string(clubName),
-                               clubMember=clubMember,
-                               starting=starting,
-                               updating=updating,
-                               total=total,
-                                st_id=stateId)
+def add_user(first,last,address1,address,muni,zip,email,phone,cell,business,member,duesDueDate,dateJoined,clubName,
+             clubMember,starting,updating,total,stateName,taggersMasterID=None,suffix=None,prefix=None,nick=None):
+    # Inserts a new user into the fishtagging_taggers table no matter what
+    # Taggers Master Id will only come from the exsiting TblTaggers
+
+    if not member:
+        # Boolean field, default to False for now
+        # TODO: Investigate if this should be null/blank
+        member = False
+    if not clubMember:
+        clubMember = False
+
+    if not taggersMasterID:
+        taggersMasterID = -999
+
+    stateId = stateValToPK(stateName)
+
+    newEntry = fishtagging_taggers(
+        taggersMasterID=taggersMasterID,
+        first=check_string(first),
+        last=check_string(last),
+        suffix=check_string(suffix),
+        prefix=check_string(prefix),
+        nick=check_string(nick),
+        address1=check_string(address1),
+        address=check_string(address),
+        muni=check_string(muni),
+        zip= check_string(zip),
+        email= check_string(email),
+        phone= check_string(phone),
+        cell= check_string(cell),
+        business= check_string(business),
+        member=member, # Casting from the Access Y/N
+        duesDueDate=duesDueDate,
+        dateJoined=dateJoined,
+        clubName=check_string(clubName),
+        clubMember=clubMember,
+        starting=starting,
+        updating=updating,
+        total=total,
+        st_id=stateId)
     export_session.add(newEntry)
     export_session.flush()
     return newEntry.id
 
+def check_and_add_user(first,last,address1,address=None,muni=None,zip=None,email=None,phone=None,cell=None,business=None
+            ,member=None,duesDueDate=None,dateJoined=None,clubName=None, clubMember=None,starting=None,updating=None,
+            total=None,stateName=None,taggersMasterID=None,suffix=None,prefix=None,nick=None):
+    # Will only call add_user if the first, last and suffix don't match anything
+
+    userid = None
+
+    if first == None or first == '' or last == None or last =='':
+        return None
+
+    usersCount = export_session.query(fishtagging_taggers).filter(fishtagging_taggers.first == first, fishtagging_taggers.last == last,
+                                                            fishtagging_taggers.suffix == check_string(suffix)).count()
+    if usersCount == 0:
+        userid = add_user(first,last,address1,address,muni,zip,email,phone,cell,business,member,duesDueDate,dateJoined,clubName,
+             clubMember,starting,updating,total,stateName,taggersMasterID,suffix,prefix,nick)
+        #print "User #{} inserted".format(userid)
+
+    return userid
+
+def transfer_tags():
+    print "Initiating transfer"
+    for item in import_session.query(tblTags).yield_per(100).enable_eagerloads(False):
+        userid = check_and_add_user(
+            first=item.FirstName,
+            last=item.LastName,
+            suffix=item.Suffix,
+            #prefix=check_string(item.Prefix), # Commented items are not in tblTags
+            #nick=check_string(item.First),
+            #address1=check_string(item.__dict__.get('Address Line 1')),
+            address1=item.Address,
+            muni=item.Munic,
+            zip= item.zip,
+            #email= check_string(item.email),
+            #phone= check_string(item.Phone),
+            #cell= check_string(item.Cell),
+            #business= check_string(item.Business),
+            #member=item.Member == 1, # Casting from the Access Y/N
+            #duesDueDate=item.Dues,
+            #dateJoined=item.__dict__.get('Date Joined'),
+            clubName=item.ClubName,
+            #clubMember=item.__dict__.get('Club Member') == 1,
+            #starting=item.Starting,
+            #updating=item.Updating,
+            #total=item.Total,
+            stateName=item.St
+        )
+        print userid
+
+
 def transfer_tags_users():
     print "starting"
     # Get unique first and last names
-    #list = import_session.query(tblTags.LastName, tblTags.FirstName).group_by(tblTags.LastName, tblTags.FirstName)
+    #taglist = import_session.query(tblTags.LastName, tblTags.FirstName).group_by(tblTags.LastName, tblTags.FirstName)
 
-    taglist = import_session.query(tblTags).all()
 
-    zeroes = 0
-    ones = 0
-    higher = 0
+    #taglist = import_session.execute('SELECT "tblTags"."First Name", "tblTags"."Tagger Last Name",count(*) as count FROM "tblTags" left join "tblTaggersMaster" on ("tblTaggersMaster"."First Name" = "tblTags"."First Name" AND "tblTaggersMaster"."Last Name" = "tblTags"."Tagger Last Name") where "tblTaggersMaster"."First Name" is null and "tblTaggersMaster"."Last Name" is null group by "tblTags"."First Name", "tblTags"."Tagger Last Name"')
+    # lets make them all unique with addresses and take them all
+
+    #taglist = import_session.query(tblTags.LastName, tblTags.FirstName)\
+    #.outerjoin(tblTaggersMaster,  tblTaggersMaster.__dict__.get('First Name') == tblTags.FirstName,tblTaggersMaster.__dict__.get('Last Name') == tblTags.LastName)\
+    #.filter(tblTaggersMaster.__dict__.get('First Name') == None, tblTaggersMaster.__dict__.get('Last Name') == None)\
+    #.group_by(tblTags.LastName, tblTags.FirstName)
+
+    #taglist = import_session.query(tblTags).all()
+
+    taglist = import_session.execute("""
+SELECT
+  "tblTags"."First Name" AS "firstName",
+  "tblTags"."Tagger Last Name" AS "lastName",
+  "tblTags"."Suffix",
+  "tblTags"."Address",
+  "tblTags"."Munic",
+  "tblTags"."St",
+  "tblTags".zip,
+  "tblTags"."Club Name" AS "clubName",
+count(*) as count
+FROM "tblTags"
+--  public."tblTaggersMaster";
+left join "tblTaggersMaster" on ("tblTaggersMaster"."First Name" = "tblTags"."First Name" AND
+"tblTaggersMaster"."Last Name" = "tblTags"."Tagger Last Name"  )
+where "tblTaggersMaster"."First Name" is null and
+	"tblTaggersMaster"."Last Name" is null
+group by
+  "firstName",
+  "lastName",
+  "tblTags"."Suffix",
+  "tblTags"."Address",
+  "tblTags"."Munic",
+  "tblTags"."St",
+  "tblTags".zip,
+  "clubName"
+  order by "lastName" desc
+    """)
+
     for tag in taglist:
         print "tag"
-        print tag.LastName
-        if tag.FirstName is not '' and tag.LastName is not '':
-            # Just going to take the first here..
-            userList = export_session.query(fishtagging_taggers).filter(fishtagging_taggers.first == tag.FirstName, fishtagging_taggers.last == tag.LastName)
-            user = userList.first()
-            if user is not None:
-                # Get existing user ID
-                userId = user.id
-                #print userId
-            else:
-                stateId = export_session.query(fishtagging_states).filter(fishtagging_states.st == tag.St).first() # Turn the State val into the reference PK
-                if stateId is not None:
-                    stateId = stateId.id
-                else:
-                    print "STATE WAS NOT FOUND"
-
-                userId = add_user(tag.FirstName,tag.LastName,tag.Address,'',tag.Munic,tag.zip,'','','','',None,None,None,
-                         tag.ClubName,None,None,None,None,stateId,None,tag.Suffix,None,None)
+        stateId = None # Reset
+        if tag.firstName is not '' and tag.lastName is not '':
+            stateId = stateValToPK(tag.St)
+            userId = add_user(tag.firstName,tag.lastName,tag.Address,'',tag.Munic,tag.zip,'','','','',None,None,None,
+                tag.ClubName,None,None,None,None,stateId,None,tag.Suffix,None,None)
             print userId
 
+def stateValToPK(stateName):
+    # Transforms a state name to the state table's PKID, or returns None
 
+    if stateName is not '':
+        stateId = export_session.query(fishtagging_states).filter(fishtagging_states.st == stateName).first() # Turn the State val into the reference PK
+        if stateId is not None:
+            return stateId.id
+        else:
+            print "STATE {} WAS NOT FOUND".format(stateName)
+            return None
 
-
-
+# lookup stuff for later
+# Just going to take the first here..
+            #userList = export_session.query(fishtagging_taggers).filter(fishtagging_taggers.first == firstName, fishtagging_taggers.last == lastName)
+            #user = userList.first()
+            #if user is not None:
+                # Get existing user ID
+                #userId = user.id
+                #print userId
 
 
     #     num = len([a for a in userId])
@@ -308,6 +406,7 @@ def transfer_captures():
         #print taggerId.id
 
 
+
 def transfer_recaptures():
     pass
 
@@ -319,7 +418,10 @@ def run_transfers():
     transfer_species()
     transfer_zonecodes()
     transfer_taggers()
-    transfer_captures()
+    #transfer_captures()
     transfer_recaptures()
 
-transfer_tags_users()
+#transfer_tags_users()
+transfer_taggers()
+transfer_tags()
+#run_transfers()
