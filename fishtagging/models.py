@@ -115,21 +115,24 @@ class Recapture(models.Model): # Do not use this table
     def __str__(self):              # __unicode__ on Python 2
         return "{}, {}".format(self.date, self.place)
 
-
+class UniqueFish(models.Model):
+    #species = models.ForeignKey(Species) # Probably shouldn't use this
+    def __str__(self):              # __unicode__ on Python 2
+        return "Unique #{}".format(self.pk)
 
 class Tags(models.Model): # Table to contain all captures/releases/recaptures
     tagno  = models.IntegerField(blank=True, null=True)
     date = models.DateTimeField(blank=True, null=True)
-    species = models.ForeignKey(Species)
+    species = models.ForeignKey(Species,to_field="code",blank=True,null=True)
     place = models.CharField(max_length=255, blank=True)
-    location = models.ForeignKey(LandLocation)
-    whzone = models.ForeignKey(WHZoneCodes)
-    disposition = models.ForeignKey(Disposition)
-    tagger = models.ForeignKey(Taggers)
+    location = models.ForeignKey(LandLocation,null=True,blank=True)
+    whzone = models.ForeignKey(WHZoneCodes,null=True,blank=True)
+    disposition = models.ForeignKey(Disposition,null=True,blank=True)
+    tagger = models.ForeignKey(Taggers,null=True,blank=True) # for now
     length = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
     oz = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
     weight = models.DecimalField(max_digits=6, decimal_places=2, blank=True, null=True)
-    wh = models.CharField(max_length=255, blank=True) #?
+    wh = models.CharField(max_length=255, blank=True) #? this is a yes/no 1/1 about sending data to Woods Hall
     crossRefTag = models.IntegerField(blank=True, null=True) # Get better desc
     releaseno  = models.IntegerField(blank=True, null=True)
     daterun = models.DateTimeField(blank=True, null=True)
@@ -137,6 +140,7 @@ class Tags(models.Model): # Table to contain all captures/releases/recaptures
     long  = models.CharField(max_length=255, blank=True)
     comments = models.CharField(max_length=255, blank=True)
     isRecapture = models.BooleanField(default=False)
+    uniqueFish = models.ForeignKey(UniqueFish)
 
     def __str__(self):              # __unicode__ on Python 2
         return "{}, {}".format(self.date, self.place)
@@ -144,8 +148,5 @@ class Tags(models.Model): # Table to contain all captures/releases/recaptures
     class Meta:
         ordering = ('tagno',)
 
-class UniqueFish(models.Model):
-    species = models.ForeignKey(Species)
 
-    def __str__(self):              # __unicode__ on Python 2
-        return "{}".format(self.species)
+

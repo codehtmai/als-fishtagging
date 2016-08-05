@@ -3,6 +3,7 @@ __author__ = 'doc'
 from sqlalchemy import *
 from sqlalchemy.orm import create_session
 from sqlalchemy.ext.declarative import declarative_base, DeferredReflection
+from sqlalchemy.sql import sqltypes
 from sqlalchemy import distinct
 
 #Create and engine and get the metadata
@@ -30,7 +31,16 @@ class tblLandLocation(ImportBase): # pk problems
     __table__ = Table('tblIn/Offshore/Inland', import_metadata, autoload=True)
 
 class tblRecapture(ImportBase):
-    __table__ = Table('tblRecapture', import_metadata, autoload=True)
+    #__table__ = Table('tblRecapture', import_metadata, autoload=True)
+    __tablename__ = 'tblRecapture'
+    __table_args__ = {'autoload': True,'autoload_with': import_engine}
+    LastName = Column('Last Name', String) # Rename it
+    FirstName = Column('First Name', String)
+    tagno = Column('Tag#', sqltypes.Integer)
+    crossRefTag = Column('Cross Ref Tag #',sqltypes.Integer)
+    releaseNo = Column('release #',sqltypes.Integer)
+    member = Column('Member Y/N',String)
+
 
 class tblStates(ImportBase):
     __table__ = Table('tblStates', import_metadata, autoload=True)
@@ -51,6 +61,11 @@ class tblTags(ImportBase):
     LastName = Column('Tagger Last Name', String) # Rename it
     FirstName = Column('First Name', String)
     ClubName = Column('Club Name', String)
+    tagno = Column('Tag #', sqltypes.Integer)
+    SpeciesCode = Column('Species Code',sqltypes.Integer)
+    place = Column('Place Tagged',String)
+    crossRefTag = Column('Cross Ref Tag #',sqltypes.Integer)
+    releaseNo = Column('Release #',sqltypes.Integer)
 
 
 class tblWH_ZoneCodes(ImportBase):
@@ -180,6 +195,7 @@ def check_string(str):
         return str
 
 def transfer_taggers():
+    # imports users from the masters taggers table
     list = import_session.query(tblTaggersMaster).all()
 
     for item in list:
@@ -267,18 +283,25 @@ def check_and_add_user(first,last,address1,address=None,muni=None,zip=None,email
 
     if first == None or first == '' or last == None or last =='':
         return None
-
-    usersCount = export_session.query(fishtagging_taggers).filter(fishtagging_taggers.first == first, fishtagging_taggers.last == last,
-                                                            fishtagging_taggers.suffix == check_string(suffix)).count()
-    if usersCount == 0:
+    userQuery = export_session.query(fishtagging_taggers).filter(fishtagging_taggers.first == first, fishtagging_taggers.last == last,
+                                                            fishtagging_taggers.suffix == check_string(suffix))
+    usersCount = userQuery.count()
+    if usersCount == 0: # add new user
         userid = add_user(first,last,address1,address,muni,zip,email,phone,cell,business,member,duesDueDate,dateJoined,clubName,
-             clubMember,starting,updating,total,stateName,taggersMasterID,suffix,prefix,nick)
+        clubMember,starting,updating,total,stateName,taggersMasterID,suffix,prefix,nick)
         #print "User #{} inserted".format(userid)
+    elif usersCount ==1:
+        userid = userQuery.first().id
+    else:
+        print "Strange; userscount:{}, first:{},last:{},suffix:{},taggersMasterID:{},userid:{}".format(usersCount,first,last,suffix,taggersMasterID,userid)
+
 
     return userid
 
 def transfer_tags():
+    # transfers users and tags from tblTags
     print "Initiating transfer"
+    i = 0
     for item in import_session.query(tblTags).yield_per(100).enable_eagerloads(False):
         userid = check_and_add_user(
             first=item.FirstName,
@@ -304,7 +327,196 @@ def transfer_tags():
             #total=item.Total,
             stateName=item.St
         )
-        print userid
+        #if isinstance(userid, ( int, long ) ):
+        # proceed allowing null users for now ###
+        insert_tag(
+            item.tagno,
+            item.Date,
+            item.place,
+            item.Length,
+            item.oz,
+            item.Weight,
+            item.WH, # int this is a yes/no (1/0) in access, default no
+            item.crossRefTag,
+            item.releaseNo,
+            item.Daterun,
+            item.Latitude,
+            item.Longitude,
+            item.SpeciesCode,
+            userid,
+            item.zone, # yes this is right
+            item.Comments,
+            None, # disposition not in tblTags
+            False, # not from the recap table
+            item.location, # watch for vals
+        ) # location field seems to be the id for the legend field, but has values above 2.
+        #else:
+        #    print "Something very wrong with userID at {}!".format(i)
+
+        i+=1
+        if not i%1000:
+            print "Completed {} tag transfers".format(i)
+        #print userid
+
+def transfer_recaptures():
+    # transfers users and tags from tblTags
+    print "Initiating recaptures transfer"
+    i = 0
+    y=0
+    for item in import_session.query(tblRecapture).yield_per(100).enable_eagerloads(False):
+
+        if item.member and item.member.upper() == 'YES':
+            item.member = True
+        else:
+            item.member = False
+
+        userid = check_and_add_user(
+            first=item.FirstName,
+            last=item.LastName,
+            suffix=item.Suffix,
+            #prefix=check_string(item.Prefix), # Commented items are not in tblTags
+            #nick=check_string(item.First),
+            #address1=check_string(item.__dict__.get('Address Line 1')),
+            address1=item.Address,
+            muni=item.Munic,
+            zip= item.Zip,
+            email= check_string(item.email),
+            phone= check_string(item.Phone),
+            #cell= check_string(item.Cell),
+            #business= check_string(item.Business),
+            member=item.member, # Member is a string in tblRecapture
+            #duesDueDate=item.Dues,
+            #dateJoined=item.__dict__.get('Date Joined'),
+            #clubName=item.ClubName,
+            #clubMember=item.__dict__.get('Club Member') == 1,
+            #starting=item.Starting,
+            #updating=item.Updating,
+            #total=item.Total,
+            stateName=item.St
+        )
+        #if isinstance(userid, ( int, long ) ):
+        # proceed allowing null users for now ###
+        insertedtagid=insert_tag(
+            item.tagno,
+            item.Date,
+            item.Place,
+            item.Length,
+            item.oz,
+            item.Weight,
+            item.WH, # int this is a yes/no (1/0) in access, default no
+            item.crossRefTag,
+            item.releaseNo,
+            item.WHdaterun, #is this the same as WHDaterun or undaterun?
+            item.Latitude,
+            item.Longitude,
+            None, # no species here..hm
+            userid,
+            item.zone, # yes this is right
+            item.Comments,
+            item.DispositionNumber,
+            True, # from the recap table
+            item.location, # watch for vals
+        ) # location field seems to be the id for the legend field, but has values above 2.
+        #else:
+        #    print "Something very wrong with userID at {}!".format(i)
+
+        i+=1
+        if not i%1000:
+            print "Completed {} recapture transfers".format(i)
+
+        if insertedtagid:
+            y+=1
+            print "Completed {} recapture actual inserts".format(y)
+        #print userid
+
+def insert_uniquefish():
+    newEntry = fishtagging_uniquefish()
+    export_session.add(newEntry)
+    export_session.flush()
+    return newEntry.id
+
+def insert_tag(tagno,date,place,length,oz,weight,wh,crossRefTag,releaseno,daterun,lat,long,species_id,tagger_id,
+               whzone_id,comments,disposition_id,isRecapture,location_id):
+
+    #Does tag exist?
+    existingTag=export_session.query(fishtagging_tags).filter(fishtagging_tags.tagno == tagno).limit(1).first()
+
+    if existingTag:
+        uniqueFishId = existingTag.uniqueFish_id
+        if isRecapture: # get the species from a previous tag entry
+            species_id = existingTag.species_id
+
+    # Is it mentioned in other tags, even if it hasn't been inserted yet?
+    referencedTagRow=export_session.query(fishtagging_tags).filter(fishtagging_tags.crossRefTag == tagno).limit(1).first()
+
+    if referencedTagRow:
+        referencedTag = referencedTagRow.tagno
+        uniqueFishId = referencedTagRow.uniqueFish_id
+        if isRecapture: # get the species from a previous tag entry
+            species_id = referencedTagRow.species_id
+
+
+
+    # we also need to check the crossref field for previous links so that we can retroactively take the unique id
+
+    if isinstance(crossRefTag,int):
+        # alternatively get the unique fish id from a crosstag
+        crossRefTagRow=export_session.query(fishtagging_tags).filter(fishtagging_tags.tagno == crossRefTag).limit(1).first()
+        if crossRefTagRow: # it might not have been inserted yet.. #TODO: add a method at the end of ETL to rescan for crossrefs. maybe we skip this altogether until then
+            uniqueFishId2 = crossRefTagRow.uniqueFish_id
+            # sanity check..they should both match if both exist
+            #if existingTag:
+            #    assert (uniqueFishId == uniqueFishId2) # THis is failing because two tags are separately inserted uniquely. then later the cross rel becomes known
+            # to fix it we should write a function HERE TODO search for all tags matching the cross id and reset the unique id to the first one
+            uniqueFishId = uniqueFishId2
+            if isRecapture:
+                species_id = crossRefTagRow.species_id
+
+    if not existingTag:
+        if isRecapture:
+            #print "WARNING: tagno {} from recapture SKIPPED".format(tagno)
+            return None
+        uniqueFishId = insert_uniquefish()
+
+    assert(isinstance(uniqueFishId, ( int, long )) ) # make sure we got a unique fish one way or another
+
+
+
+    if location_id > 2:
+        location_id = None
+
+    #todo: temporary hack. these are missing for some reason
+    if species_id in [6, 14, 39, 78, 80, 110, 114, 117, 129, 130, 138, 144, 151, 170, 189, 280, 363, 390, 532, 546, 599, 641, 726, 951]:
+        species_id = None
+
+    #Insert new tag
+    newEntry = fishtagging_tags(
+        tagno  = tagno,
+        date = date,
+        species_id = species_id,
+        place = place,
+        location_id = location_id,
+        whzone_id = whzone_id,
+        disposition_id = disposition_id,
+        tagger_id = tagger_id,
+        length = length,
+        oz = oz,
+        weight = weight,
+        wh = wh,
+        crossRefTag = crossRefTag,
+        releaseno  = releaseno,
+        daterun = daterun,
+        lat  = check_string(lat),
+        long  = check_string(long),
+        comments = check_string(comments),
+        isRecapture = isRecapture,
+        uniqueFish_id = uniqueFishId
+    )
+
+    export_session.add(newEntry)
+    export_session.flush()
+    return newEntry.id
+
 
 
 def transfer_tags_users():
@@ -369,7 +581,7 @@ def stateValToPK(stateName):
         if stateId is not None:
             return stateId.id
         else:
-            print "STATE {} WAS NOT FOUND".format(stateName)
+            #print "STATE {} WAS NOT FOUND".format(stateName)
             return None
 
 # lookup stuff for later
@@ -406,10 +618,6 @@ def transfer_captures():
         #print taggerId.id
 
 
-
-def transfer_recaptures():
-    pass
-
 def run_transfers():
     transfer_tagtypes()
     transfer_states()
@@ -421,7 +629,8 @@ def run_transfers():
     #transfer_captures()
     transfer_recaptures()
 
-#transfer_tags_users()
-transfer_taggers()
-transfer_tags()
+
+#transfer_taggers()
+#transfer_tags()
+transfer_recaptures()
 #run_transfers()
